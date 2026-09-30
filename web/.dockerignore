@@ -1,0 +1,29 @@
+# Build context for the web image. Everything that does not end up in the
+# production bundle is excluded, which keeps the context small and stops a
+# local node_modules from invalidating the dependency layer.
+
+node_modules
+dist
+.vite
+
+# The native projects are large, are rebuilt by `cap sync`, and are irrelevant
+# to the web image.
+android
+ios
+
+# Local runtime state and secrets
+.env
+.env.local
+*.db
+*.db-wal
+*.db-shm
+
+# Tests are not run inside the image.
+src/**/*.test.ts
+src/**/*.test.tsx
+
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.log

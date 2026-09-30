@@ -1,0 +1,34 @@
+# Build output
+/dist
+/build
+/server/audiora
+/server/audiora.exe
+web/dist
+web/node_modules
+web/.vite
+
+# Runtime data (db, cover art, transcode cache)
+/data
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.swp
+
+# Go
+*.test
+*.out
+
+# Local test harness output
+/.local-test
+
+# TypeScript incremental build cache
+*.tsbuildinfo

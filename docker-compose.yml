@@ -1,0 +1,126 @@
+# Audiora 2.0 — self-hosted music streaming.
+#
+# Three containers, no database server, no cache server:
+#
+#   caddy    terminates TLS and routes
+#   web      serves the compiled single-page app
+#   server   the Go API, the audio streaming and the scanner
+#
+# State lives in one volume mounted at /data: the SQLite database, extracted
+# cover art and the transcode cache. Your music is mounted read-only and is
+# never copied anywhere.
+#
+#   cp .env.example .env    then edit it
+#   docker compose up -d
+
+name: audiora
+
+services:
+  # --- TLS terminator and router -------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      server:
+        condition: service_healthy
+    environment:
+      AUDIORA_DOMAIN: ${AUDIORA_DOMAIN:?set AUDIORA_DOMAIN in .env}
+      AUDIORA_ACME_EMAIL: ${AUDIORA_ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddy stores its ACME account and certificates here. Losing this
+      # volume means re-issuing certificates on every restart.
+      - caddy_data:/data
+      - caddy_config:/config
+    # A read-only filesystem with /data and /config writable is all Caddy
+    # needs, and removes a whole class of container-escape mistakes.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Binds 80/443 and receives the ACME HTTP challenge.
+      - NET_BIND_SERVICE
+
+  # --- The single-page app -------------------------------------------------
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # The stock nginx entrypoint needs to write to its cache and temporary
+    # directories before dropping privileges, so this container is left with
+    # the defaults rather than a hand-tuned capability set.
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- The API, the audio and the library scanner --------------------------
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${AUDIORA_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+    environment:
+      LISTEN_ADDR: ":8080"
+      DATA_PATH: "/data"
+      MUSIC_PATH: "/music"
+
+      AUDIORA_DOMAIN: ${AUDIORA_DOMAIN:?set AUDIORA_DOMAIN in .env}
+      # Comma-separated allowlist. The web app is same-origin, so its own
+      # domain is the only one strictly required; add others for a separate
+      # native build or a custom client.
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${AUDIORA_DOMAIN}}
+
+      # Signs access tokens. Changing it invalidates every session.
+      AUDIORA_SECRET: ${AUDIORA_SECRET:?set AUDIORA_SECRET in .env}
+      ACCESS_TOKEN_TTL_MIN: ${ACCESS_TOKEN_TTL_MIN:-15}
+
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Admin}
+
+      SCAN_INTERVAL_MIN: ${SCAN_INTERVAL_MIN:-30}
+      EXTRACT_COVER_ART: ${EXTRACT_COVER_ART:-true}
+      EXTRACT_COLORS: ${EXTRACT_COLORS:-true}
+      PREWARM_TRANSCODE: ${PREWARM_TRANSCODE:-false}
+    volumes:
+      # The database, cover art and transcode cache.
+      - audiora_data:/data
+      # Your music, read-only. The server never writes here.
+      - ${MUSIC_PATH:?set MUSIC_PATH in .env}:/music:ro
+    security_opt:
+      - no-new-privileges:true
+    # Scans and transcodes are CPU-hungry and can run alongside playback, so
+    # this is capped rather than left to consume every core.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  audiora_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,387 @@
+@import 'tailwindcss';
+
+/*
+  Audiora design system.
+
+  Two rules govern the glass effect here, and breaking either of them is what
+  makes glassmorphism feel cheap on a phone:
+
+  1. Blur is expensive. At most two or three elements on screen may use
+     backdrop-filter at any moment. The large ambient backdrops are painted
+     with CSS radial gradients derived from the album's dominant colour
+     instead, which is visually almost identical and costs nothing per frame.
+  2. Colour lives in OKLCH, so a gradient between two arbitrary brand colours
+     stays perceptually even rather than going muddy through sRGB's
+     non-linear steps.
+*/
+
+@theme {
+  --color-ink-950: oklch(0.13 0.015 285);
+  --color-ink-900: oklch(0.17 0.018 285);
+  --color-ink-800: oklch(0.22 0.02 285);
+  --color-ink-700: oklch(0.29 0.022 285);
+  --color-ink-600: oklch(0.42 0.025 285);
+  --color-ink-400: oklch(0.68 0.02 285);
+  --color-ink-200: oklch(0.88 0.015 285);
+  --color-ink-100: oklch(0.96 0.01 285);
+
+  --color-accent: oklch(0.72 0.17 305);
+  --color-accent-soft: oklch(0.82 0.11 305);
+
+  --font-sans:
+    'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  --radius-glass: 1.5rem;
+
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+  The accent colour is rewritten at runtime from the current album's dominant
+  colour. Everything that should feel tinted by the artwork reads from here,
+  which is why changing one custom property restyles the whole app.
+*/
+:root {
+  --accent-live: var(--color-accent);
+  --accent-live-soft: var(--color-accent-soft);
+  --accent-glow: oklch(0.72 0.17 305 / 0.35);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  /* The whole app is one fixed surface; only inner panes scroll. */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* --- the glass surface -------------------------------------------------
+   One recipe, used everywhere. The surface is a translucent tint of the
+   backdrop rather than a solid fill, which is what lets the artwork behind it
+   read through. */
+
+.glass {
+  background: color-mix(in oklab, var(--color-ink-900) 55%, transparent);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid oklch(1 0 0 / 0.09);
+  /* A highlight along the top edge is what sells the illusion of a lit pane
+     of glass rather than a flat translucent rectangle. */
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.11),
+    inset 0 -1px 0 0 oklch(0 0 0 / 0.18),
+    0 8px 32px oklch(0 0 0 / 0.36);
+}
+
+/* A lighter variant for surfaces sitting directly on the artwork. */
+.glass-bright {
+  background: color-mix(in oklab, var(--color-ink-800) 42%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid oklch(1 0 0 / 0.12);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.14),
+    0 4px 20px oklch(0 0 0 / 0.3);
+}
+
+/* A heavier variant for the player bar, which needs to be legible over
+   anything and cannot afford to show the artwork through. */
+.glass-solid {
+  background: color-mix(in oklab, var(--color-ink-900) 82%, transparent);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid oklch(1 0 0 / 0.11);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.13),
+    0 -4px 40px oklch(0 0 0 / 0.5);
+}
+
+/* --- the ambient backdrop ---------------------------------------------
+   Painted with gradients, not backdrop-filter. This is the single biggest
+   performance decision in the UI. */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 80% 55% at 18% 8%,
+      color-mix(in oklab, var(--accent-live) 42%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 88% 22%,
+      color-mix(in oklab, var(--accent-live-soft) 28%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 90% 60% at 50% 100%,
+      color-mix(in oklab, var(--color-accent) 18%, transparent),
+      transparent 70%
+    ),
+    var(--color-ink-950);
+}
+
+/* A soft grain layer. Pure CSS, no image request, and it stops the large flat
+   gradients from banding on cheap phone panels. */
+.ambient::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- scrollbars -------------------------------------------------------- */
+
+.scroll-pane {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.16) transparent;
+}
+
+.scroll-pane::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll-pane::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 0.16);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.scroll-pane::-webkit-scrollbar-thumb:hover {
+  background: oklch(1 0 0 / 0.28);
+  background-clip: content-box;
+}
+
+/* --- shared motion ----------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-rise {
+  animation: rise 0.5s var(--ease-spring) both;
+}
+
+.animate-fade {
+  animation: fade 0.35s var(--ease-out-quint) both;
+}
+
+/* Staggered entrance for grids. The delay is set inline per card. */
+.stagger > * {
+  animation: rise 0.55s var(--ease-spring) both;
+}
+
+/* --- interactive surfaces ---------------------------------------------- */
+
+.pressable {
+  transition:
+    transform 0.18s var(--ease-spring),
+    background-color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.pressable:active {
+  transform: scale(0.965);
+}
+
+@media (hover: hover) {
+  .pressable:hover {
+    transform: scale(1.02);
+  }
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-ink-200);
+  background: oklch(1 0 0 / 0.06);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  transition: all 0.2s var(--ease-spring);
+  white-space: nowrap;
+}
+
+.chip:hover {
+  background: oklch(1 0 0 / 0.12);
+  color: var(--color-ink-100);
+}
+
+.chip[data-active='true'] {
+  background: color-mix(in oklab, var(--accent-live) 28%, transparent);
+  border-color: color-mix(in oklab, var(--accent-live) 45%, transparent);
+  color: var(--color-ink-100);
+}
+
+/* A hairline top border that catches the light, for list rows inside glass. */
+.hairline {
+  border-top: 1px solid oklch(1 0 0 / 0.07);
+}
+
+/* Respect the OS-level motion preference: kill transforms, keep opacity so
+   nothing appears frozen mid-transition. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pressable:active,
+  .pressable:hover {
+    transform: none;
+  }
+}
+
+/* The equaliser bars in the currently-playing row. */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.eq span {
+  width: 2.5px;
+  background: var(--accent-live);
+  border-radius: 1px;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+
+.eq span:nth-child(1) {
+  height: 55%;
+  animation-delay: -0.2s;
+}
+.eq span:nth-child(2) {
+  height: 100%;
+  animation-delay: -0.5s;
+}
+.eq span:nth-child(3) {
+  height: 70%;
+  animation-delay: -0.8s;
+}
+
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* A range input styled to match the design, for the seek bar and volume. */
+.seek {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent-live) 0%,
+    var(--accent-live) var(--progress, 0%),
+    oklch(1 0 0 / 0.16) var(--progress, 0%),
+    oklch(1 0 0 / 0.16) 100%
+  );
+}
+
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -4.5px;
+  border-radius: 999px;
+  background: var(--color-ink-100);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.5);
+  transition: transform 0.15s var(--ease-spring);
+}
+
+.seek:active::-webkit-slider-thumb {
+  transform: scale(1.35);
+}
+
+.seek::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.16);
+}
+
+.seek::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent-live);
+}
+
+.seek::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-ink-100);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.5);
+}
+
+/* Safe-area helpers for the notch and the iOS home indicator. */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}

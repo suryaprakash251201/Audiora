@@ -1,0 +1,63 @@
+# Audiora 2.0 — the edge. Terminates TLS, then routes by path.
+#
+# Caddy requests and renews the certificate automatically, so the only
+# requirement is that AUDIORA_DOMAIN resolves to this machine and that ports
+# 80 and 443 are reachable from the internet.
+
+{
+	email {$AUDIORA_ACME_EMAIL}
+
+	# The ACME HTTP challenge is the one part of this setup that cannot be
+	# entirely automated, so a failure here is worth surfacing loudly in the
+	# log rather than failing silently.
+	acme_dns www
+}
+
+{$AUDIORA_DOMAIN} {
+	encode zstd gzip
+
+	# The API and the WebSocket both need the real client address for logging
+	# and for correct WebSocket upgrades through a proxy.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# --- API ---
+	handle /api/* {
+		reverse_proxy server:8080 {
+			# Audio responses are long-lived streams; the default timeouts
+			# would sever playback partway through a track.
+			transport http {
+				read_timeout 24h
+				write_timeout 24h
+				dial_timeout 10s
+			}
+		}
+	}
+
+	handle /healthz {
+		reverse_proxy server:8080
+	}
+
+	# --- The web app ---
+	handle {
+		reverse_proxy web:80
+	}
+
+	# --- Access logging ---
+	#
+	# Query strings are deliberately omitted. The stream and sync routes
+	# authenticate with a token in the query string (an <audio> element and a
+	# WebSocket cannot send an Authorization header), and logging it would
+	# write a live session token to disk on every play.
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+		format json
+	}
+}
