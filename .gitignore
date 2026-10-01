@@ -32,3 +32,9 @@ Thumbs.db
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Playwright MCP output
+/.playwright-mcp
+
+# Verification screenshots
+/*.png

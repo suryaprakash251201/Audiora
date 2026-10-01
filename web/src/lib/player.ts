@@ -12,7 +12,7 @@
 
 import { Capacitor } from '@capacitor/core'
 import type { MediaSessionPlugin } from '@capgo/capacitor-media-session'
-import { audioUrl, api, API_BASE, type Track } from './api'
+import { audioUrl, api, coverUrl, type Track } from './api'
 import {
   advance,
   currentTrackId,
@@ -657,14 +657,12 @@ export class Player {
   private nativeMediaSession: MediaSessionPlugin | null = null
 
   private updateMediaSessionMetadata(track: Track) {
-    const artwork = track.coverPath
-      ? [
-          {
-            src: `${API_BASE}/api/covers/${track.coverPath}`,
-            sizes: '512x512',
-            type: 'image/jpeg',
-          },
-        ]
+    // Built through coverUrl so the access token is included. The lock-screen
+    // artwork is fetched by the OS as a plain image request, so a URL without
+    // the token comes back 401 and the lock screen shows no artwork.
+    const art = coverUrl(track.coverPath)
+    const artwork = art
+      ? [{ src: art, sizes: '512x512', type: 'image/jpeg' }]
       : undefined
 
     if (this.nativeMediaSession) {

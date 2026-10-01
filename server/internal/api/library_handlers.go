@@ -297,6 +297,9 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The most-played artists for this user. The recency tiebreaker uses the
+	// latest play in the group rather than the row's own timestamp, so an
+	// artist played often years ago does not outrank one played often today.
 	rows, err := s.DB.Query(`
 		SELECT a.name, COUNT(*) AS plays
 		FROM play_history h
@@ -304,9 +307,10 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
 		JOIN artists a ON a.id = t.artist_id
 		WHERE h.user_id = ?
 		GROUP BY a.id
-		ORDER BY plays DESC, plays_at DESC
+		ORDER BY plays DESC, MAX(h.played_at) DESC
 		LIMIT 10`, userID)
 	if err != nil {
+		slog.Error("could not build top artists", "err", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "could not build suggestions")
 		return
 	}
@@ -320,9 +324,16 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ap artistPlays
 		if err := rows.Scan(&ap.Name, &ap.Plays); err != nil {
-			continue
+			slog.Error("could not read a top artist row", "err", err)
+			writeError(w, http.StatusInternalServerError, "server_error", "could not build suggestions")
+			return
 		}
 		top = append(top, ap)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("top artist rows failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "server_error", "could not build suggestions")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"recentlyAdded": recent, "topArtists": top})

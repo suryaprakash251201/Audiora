@@ -9,7 +9,10 @@ $port = 8099
 $base = "http://127.0.0.1:$port"
 
 $env:MUSIC_PATH       = Join-Path $work 'music'
-$env:DATA_PATH        = Join-Path $work 'data'
+# Its own data directory. Sharing one with the development server meant this
+# script's delete-then-bootstrap left the dev server with the test's admin
+# password, because the server skips bootstrap whenever any user exists.
+$env:DATA_PATH        = Join-Path $work 'e2e-data'
 $env:AUDIORA_DOMAIN   = 'localhost'
 $env:AUDIORA_SECRET   = 'test-secret-value-that-is-definitely-long-enough-32'
 $env:LISTEN_ADDR      = ":$port"
@@ -35,14 +38,14 @@ function Check($name, $condition, $detail = '') {
 # this run's behaviour rather than whatever a previous one left behind.
 # A server left behind by an interrupted run would hold the file open, so
 # those are cleared out first.
-Get-Process audiora -ErrorAction SilentlyContinue | ForEach-Object {
+Get-Process audiora-e2e -ErrorAction SilentlyContinue | ForEach-Object {
     Write-Host "stopping a leftover audiora process (pid $($_.Id))" -ForegroundColor DarkGray
     $_.Kill()
     $_.WaitForExit(5000)
 }
 Start-Sleep -Milliseconds 500
 
-$dataPath = Join-Path $work 'data'
+$dataPath = Join-Path $work 'e2e-data'
 if (Test-Path $dataPath) {
     Write-Host "removing previous data directory`n" -ForegroundColor DarkGray
     Remove-Item $dataPath -Recurse -Force
@@ -50,7 +53,16 @@ if (Test-Path $dataPath) {
 
 Write-Host "`n=== Audiora end-to-end test ===`n" -ForegroundColor Cyan
 
-$server = Start-Process -FilePath (Join-Path $work 'audiora.exe') -PassThru `
+# A binary of its own, so the end-to-end run can use a separate data
+# directory and port while a development server is already running.
+$binary = Join-Path $work 'audiora-e2e.exe'
+if (-not (Test-Path $binary) -or (Get-Item $binary).LastWriteTime -lt (Get-Item (Join-Path $root 'server\cmd\audiora\main.go')).LastWriteTime) {
+    Push-Location (Join-Path $root 'server')
+    try { & go build -o $binary ./cmd/audiora } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'could not build the server for the end-to-end run' }
+}
+
+$server = Start-Process -FilePath $binary -PassThru `
     -RedirectStandardOutput (Join-Path $work 'server.log') `
     -RedirectStandardError  (Join-Path $work 'server.err') `
     -NoNewWindow
@@ -197,6 +209,19 @@ try {
         -Body (@{ trackId = $track.id; completion = 0.9; positionMs = 2900 } | ConvertTo-Json)
     $recent = Invoke-RestMethod "$base/api/history/recent" -Headers $h
     Check "history recorded" ($recent.tracks.Count -eq 1) $recent.tracks.Count
+
+    # --- suggestions, which the home page calls on every load ---
+    # This route once returned 500 because its query named a column that did
+    # not exist, and no test covered it. Hence the explicit check.
+    try {
+        $sug = Invoke-RestMethod "$base/api/suggestions" -Headers $h
+        Check "suggestions endpoint returns 200" $true
+        Check "suggestions list recently added" ($sug.recentlyAdded.Count -ge 1) $sug.recentlyAdded.Count
+        Check "suggestions include a top artist" ($sug.topArtists.Count -ge 1) `
+            ($sug.topArtists | ForEach-Object { "$($_.name)=$($_.plays)" }) -join ', '
+    } catch {
+        Check "suggestions endpoint returns 200" $false $_.Exception.Message
+    }
 
     # --- sync state over plain HTTP ---
     $sync = Invoke-RestMethod "$base/api/sync/state" -Headers $h

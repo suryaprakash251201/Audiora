@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { api, type Track } from '../lib/api'
+import { coverUrl, type Track } from '../lib/api'
 import { formatDuration } from '../lib/format'
 import { Cover, IconButton } from './ui'
 import { CloseIcon, TrashIcon } from './icons'
@@ -122,7 +122,7 @@ export function QueueSheet({
                 >
                   {track && (
                     <Cover
-                      src={coverUrlOf(track)}
+                      src={coverUrl(track.coverPath)}
                       alt=""
                       seed={track.albumId}
                       className="h-10 w-10 shrink-0"
@@ -209,9 +209,4 @@ export function trackFromCache(id: number): Track | undefined {
   return trackCache.get(id)
 }
 
-function coverUrlOf(track: Track): string | null {
-  return track.coverPath ? `/api/covers/${track.coverPath}` : null
-}
-
 export type { QueueState, PlayerSnapshot }
-export { api }

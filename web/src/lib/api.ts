@@ -397,9 +397,20 @@ export function audioUrl(trackId: number, profile?: string): string {
   return `${API_BASE}/api/stream/${trackId}${qs ? `?${qs}` : ''}`
 }
 
+/**
+ * coverUrl builds the URL for an album's artwork.
+ *
+ * The token is required for the same reason it is on audio: the cover route
+ * is authenticated, and an <img src> cannot send an Authorization header.
+ * Without it every album silently falls back to its placeholder gradient.
+ */
 export function coverUrl(coverPath?: string | null): string | null {
   if (!coverPath) return null
-  return `${API_BASE}/api/covers/${coverPath}`
+  const session = loadSession()
+  const params = new URLSearchParams()
+  if (session) params.set('t', session.accessToken)
+  const qs = params.toString()
+  return `${API_BASE}/api/covers/${coverPath}${qs ? `?${qs}` : ''}`
 }
 
 /**

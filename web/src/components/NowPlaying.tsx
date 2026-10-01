@@ -106,20 +106,26 @@ export function NowPlaying({
         <>
           <div
             className="absolute inset-0 scale-125 bg-cover bg-center blur-3xl"
-            style={{ backgroundImage: `url(${art})`, opacity: 0.55 }}
+            style={{ backgroundImage: `url(${art})`, opacity: 0.7 }}
             aria-hidden="true"
           />
+          {/*
+            The scrim has to be effectively opaque. At 0.55 the page behind
+            stayed legible through the artwork, which reads as a rendering bug
+            rather than as depth. The top is slightly clearer so the blurred
+            colour still shows through near the header.
+          */}
           <div
             className="absolute inset-0"
             style={{
               background:
-                'linear-gradient(to bottom, oklch(0.13 0.015 285 / 0.55) 0%, oklch(0.13 0.015 285 / 0.86) 45%, oklch(0.13 0.015 285 / 0.97) 100%)',
+                'linear-gradient(to bottom, oklch(0.13 0.015 285 / 0.9) 0%, oklch(0.13 0.015 285 / 0.97) 40%, oklch(0.11 0.015 285 / 0.995) 100%)',
             }}
             aria-hidden="true"
           />
         </>
       )}
-      {!art && <div className="ambient" aria-hidden="true" />}
+      {!art && <div className="absolute inset-0 bg-ink-950" aria-hidden="true" />}
 
       <div className="relative flex h-full flex-col">
         {/* Header */}

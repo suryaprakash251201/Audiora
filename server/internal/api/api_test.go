@@ -553,6 +553,93 @@ func TestAdminRoutesRequireAdmin(t *testing.T) {
 // a group's middleware before any route-specific middleware, so registering
 // them inside the authenticated group means the bearer check rejects them
 // first and the query token is never read.
+// TestSuggestionsEndpoint exercises /api/suggestions, which the home page
+// calls on every load. It once returned 500 because the query referenced a
+// column that did not exist, and nothing caught it: no test called this route,
+// and the home page is the first screen a user sees.
+func TestSuggestionsEndpoint(t *testing.T) {
+	srv, music := newTestServer(t)
+	makeFLAC(t, filepath.Join(music, "A", "Alb", "01 - One.flac"), "One", "A", "Alb")
+	makeFLAC(t, filepath.Join(music, "B", "Alb2", "01 - Two.flac"), "Two", "B", "Alb2")
+
+	_, body := do(t, srv, http.MethodPost, "/api/auth/register", "", map[string]string{
+		"email": "sug@example.com", "password": "correct-horse",
+	})
+	var sess sessionResponse
+	json.Unmarshal(body, &sess)
+	token := sess.AccessToken
+
+	do(t, srv, http.MethodPost, "/api/admin/scan", token, nil)
+	waitForScan(t, srv, token)
+
+	// --- before any plays ---
+	status, body := do(t, srv, http.MethodGet, "/api/suggestions", token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("suggestions with no history = %d, want 200: %s", status, body)
+	}
+	var empty struct {
+		RecentlyAdded []models.Track `json:"recentlyAdded"`
+		TopArtists    []struct {
+			Name  string `json:"name"`
+			Plays int    `json:"plays"`
+		} `json:"topArtists"`
+	}
+	if err := json.Unmarshal(body, &empty); err != nil {
+		t.Fatalf("decode suggestions: %v (body %s)", err, body)
+	}
+	if len(empty.RecentlyAdded) != 2 {
+		t.Errorf("recentlyAdded = %d, want 2", len(empty.RecentlyAdded))
+	}
+	if empty.TopArtists == nil {
+		t.Error("topArtists should be an empty list, not null, so the client does not have to special-case it")
+	}
+
+	// --- after playing one artist's track ---
+	_, body = do(t, srv, http.MethodGet, "/api/library/albums", token, nil)
+	var albums struct {
+		Albums []models.Album `json:"albums"`
+	}
+	json.Unmarshal(body, &albums)
+	var playedArtist string
+	for _, al := range albums.Albums {
+		if al.Artist == "A" {
+			playedArtist = al.Artist
+			_, body = do(t, srv, http.MethodGet, "/api/library/albums/"+itoa64(al.ID), token, nil)
+			var d struct {
+				Tracks []models.Track `json:"tracks"`
+			}
+			json.Unmarshal(body, &d)
+			status, _ = do(t, srv, http.MethodPost, "/api/history", token, map[string]any{
+				"trackId": d.Tracks[0].ID, "completion": 1, "positionMs": 3000,
+			})
+			if status != http.StatusCreated {
+				t.Fatalf("record play = %d", status)
+			}
+		}
+	}
+
+	status, body = do(t, srv, http.MethodGet, "/api/suggestions", token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("suggestions after a play = %d, want 200: %s", status, body)
+	}
+	var after struct {
+		TopArtists []struct {
+			Name  string `json:"name"`
+			Plays int    `json:"plays"`
+		} `json:"topArtists"`
+	}
+	json.Unmarshal(body, &after)
+	if len(after.TopArtists) != 1 {
+		t.Fatalf("topArtists = %+v, want exactly one entry", after.TopArtists)
+	}
+	if after.TopArtists[0].Name != playedArtist {
+		t.Errorf("top artist = %q, want %q", after.TopArtists[0].Name, playedArtist)
+	}
+	if after.TopArtists[0].Plays != 1 {
+		t.Errorf("play count = %d, want 1", after.TopArtists[0].Plays)
+	}
+}
+
 func TestMediaRoutesAcceptQueryStringToken(t *testing.T) {
 	srv, music := newTestServer(t)
 	albumDir := filepath.Join(music, "A", "Alb")

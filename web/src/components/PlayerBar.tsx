@@ -129,24 +129,37 @@ export function PlayerBar({
         sm:px-4 lg:px-5"
       style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
     >
-      {/* Mobile: the track itself is the button that opens Now Playing. */}
-      <button
-        type="button"
-        onClick={onOpenNowPlaying}
-        className="mb-2 flex w-full items-center gap-3 text-left lg:hidden"
-      >
-        <Cover
-          src={coverUrl(current.coverPath)}
-          alt=""
-          seed={current.albumId}
-          className="h-11 w-11 shrink-0"
-          rounded="rounded-lg"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink-100">{current.title}</p>
-          <p className="truncate text-xs text-ink-400">{current.artist}</p>
-        </div>
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      {/*
+        Mobile: a single row with the artwork and title, plus the transport
+        buttons beside it.
+
+        The tappable artwork/title area is its own button and the transport
+        buttons are its siblings rather than descendants. Wrapping them all in
+        one button would nest interactive elements, which is invalid HTML and
+        breaks keyboard and screen-reader behaviour.
+      */}
+      <div className="mb-2 flex w-full items-center gap-3 lg:hidden">
+        <button
+          type="button"
+          onClick={onOpenNowPlaying}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <Cover
+            src={coverUrl(current.coverPath)}
+            alt=""
+            seed={current.albumId}
+            className="h-11 w-11 shrink-0"
+            rounded="rounded-lg"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-ink-100">
+              {current.title}
+            </span>
+            <span className="block truncate text-xs text-ink-400">{current.artist}</span>
+          </span>
+        </button>
+
+        <div className="flex shrink-0 items-center gap-1">
           <IconButton label={playing ? 'Pause' : 'Play'} onClick={onToggle} active={playing}>
             {playing ? <PauseIcon /> : <PlayIcon className="ml-0.5" />}
           </IconButton>
@@ -154,7 +167,7 @@ export function PlayerBar({
             <SkipForwardIcon />
           </IconButton>
         </div>
-      </button>
+      </div>
 
       <div className="flex items-center gap-3 lg:gap-5">
         {/* Artwork, hidden on mobile because the row above covers it. */}
